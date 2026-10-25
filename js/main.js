@@ -1,3 +1,8 @@
+function clearSession() {
+  currentSteps = null;
+  setSteppingUI(false);
+}
+
 function generateGraph() {
     if (appState.mode === null) {
         alert("Please select a mode first.");
@@ -7,10 +12,10 @@ function generateGraph() {
     const n = parseInt(document.getElementById("nodeInput").value, 10);
     if (!Number.isInteger(n) || n <= 0) return;
 
-    appState.graph = appState.mode === "sparse"
-        ? new SparseGraph(n)
-        : new DenseGraph(n);
+    appState.history = [];
+    appState.graph = createGraph(appState.mode, n);
 
+    clearSession();
     lockModeSelection();
     redraw();
 }
@@ -24,6 +29,9 @@ function resetGraph() {
     document.getElementById("mode-status").textContent = "No mode selected";
     if (cy) cy.elements().remove();
     appState.graph = null;
+    appState.mode = null;
+    appState.history = [];
+    clearSession();
     // document.getElementById("log-panel").innerHTML = "";
 }
 
@@ -48,6 +56,7 @@ function addEdge() {
     currentSteps = appState.graph.addEdgeSteps(from, to);
     setSteppingUI(true);
     advanceStep(from, to);
+    appState.history.push([from, to]);
 }
 
 function addEdgeFast() {
@@ -74,6 +83,7 @@ function addEdgeFast() {
   }
 
   runToCompletion(appState.graph.addEdgeSteps(from, to), from, to);
+  appState.history.push([from, to]);
 }
 
 
@@ -84,6 +94,7 @@ function runToCompletion(generator, from, to) {
     result = generator.next();
   }
   addEdgeToCy(from, to);
+  updateNodeLabels();
   if(result.value === true){
     relayoutClusters();
   }
@@ -97,6 +108,7 @@ function nextStep() {
 
 function advanceStep(from, to) {
     const result = currentSteps.next();
+    updateNodeLabels();
     if (result.done) {
         currentSteps = null;
         setSteppingUI(false);
@@ -128,4 +140,86 @@ function logMessage(text){
     entry.textContent = text;
     panel.appendChild(entry);
     panel.scrollTop = panel.scrollHeight;
+}
+
+function buildExampleSnippet() {
+  const edges = appState.history.map(([a, b]) => `[${a}, ${b}]`).join(", ");
+  return [
+    "  {",
+    `    id: "",`,
+    `    name: "",`,
+    `    description: "",`,
+    `    mode: "${appState.mode}",`,
+    `    n: ${appState.graph.vertices.length},`,
+    `    edges: [${edges}],`,
+    `    suggestedEdge: null,`,
+    "  },",
+  ].join("\n");
+}
+
+async function exportExample() {
+  if (!appState.graph) {
+    alert("Generate a graph first.");
+    return;
+  }
+  const snippet = buildExampleSnippet();
+  const box = document.getElementById("export-output");
+  const status = document.getElementById("export-status");
+
+  box.value = snippet;
+  box.hidden = false;
+  box.select();
+
+  try {
+    await navigator.clipboard.writeText(snippet);
+    status.textContent = "Copied to clipboard.";
+  } catch (e) {
+    status.textContent = "Press Ctrl+C to copy the selected text.";
+  }
+}
+
+function createGraph(mode, n) {
+  return mode === "sparse" ? new SparseGraph(n) : new DenseGraph(n);
+}
+
+
+function drain(generator) {
+  let result = generator.next();
+  while (!result.done) result = generator.next();
+  return result.value;
+}
+
+function loadExample(id) {
+  if (appState.graph !== null) {
+    alert("Reset the graph before loading an example.");
+    return;
+  }
+  const ex = EXAMPLES.find((e) => e.id === id);
+  if (!ex) return;
+  if (ex.mode !== appState.mode) {
+    alert(`This example is for ${ex.mode} mode. Select it first.`);
+    return;
+  }
+
+  const graph = createGraph(ex.mode, ex.n);
+  try {
+    for (const [from, to] of ex.edges) {
+      drain(graph.addEdgeSteps(from, to));
+    }
+  } catch (e) {
+    console.error(`Example "${ex.id}" failed during replay:`, e);
+    alert(`Could not load "${ex.name}". See the console for details.`);
+    return;
+  }
+
+  appState.graph = graph;
+  // clearSession();
+  appState.history = ex.edges.map(([a, b]) => [a, b]); 
+  lockModeSelection();
+
+  const suggested = ex.suggestedEdge;
+  document.getElementById("sourceNode").value = suggested ? suggested[0] : "";
+  document.getElementById("targetNode").value = suggested ? suggested[1] : "";
+
+  redraw();
 }

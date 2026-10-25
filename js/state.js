@@ -1,6 +1,7 @@
 const appState = {
   mode: null,   // "sparse" | "dense" | null
   graph: null,  // set once generateGraph() succeeds
+  history: [],   // array of [from, to] edges added
 };
 
 function selectMode(mode) {

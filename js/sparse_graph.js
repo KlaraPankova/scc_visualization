@@ -51,7 +51,7 @@ class SparseGraph {
         let queue = [u];
         let cycle = false;
         // delta = min(pow(m, 1/2), pow(n, 2/3))
-        let delta = Math.min(Math.round(Math.pow(this.edges.length, 1/2)), Math.round(Math.pow(this.vertices.length, 2/3)));
+        let delta = Math.min(Math.floor(Math.pow(this.edges.length, 1/2)), Math.floor(Math.pow(this.vertices.length, 2/3)));
         B.add(u);
         path.push(u.key);
 
@@ -67,6 +67,7 @@ class SparseGraph {
                     M[q.key] = 1;
                     y.incomingEdges.push(q);
                     if(q.key === z.key){
+                        path.push(q.key);
                         cycle = true;
                     }else if(!B.has(q)){
                         B.add(q);
@@ -139,7 +140,7 @@ class SparseGraph {
         const mergedKeys = [];
         for(const x of marked){
             if(x !== z){
-                this.canonical.union(z.key, x.key);
+                this.canonical.union(x.key, z.key);
                 this.symmetricDifferenceUpdate(z.outgoingEdges, x.outgoingEdges);
                 z.incomingEdges.push(...x.incomingEdges);
                 mergedKeys.push(x.key);
@@ -161,32 +162,34 @@ class SparseGraph {
         if(u.key !== z.key && u.level >= z.level){
             const backPath = [];
             const res = this.backSearch(u, z, B, backPath);
-            yield{path: backPath, message: "Back search ended with status: " + (res === Result.UNDER ? "UNDER" : res === Result.OVER ? "OVER" : "CYCLE")};
+            yield{path: backPath, message: "Back search walked through nodes " + backPath.join(" -> ") + " and ended with status: " + (res === Result.UNDER ? "UNDER" : res === Result.OVER ? "OVER" : "CYCLE" )};
             if(res === Result.UNDER && u.level > z.level){
                 z.level = u.level;
                 z.incomingEdges = [];
                 const forwardPath = [];
                 cycle = this.forwardSearch(u, z, B, forwardPath);
-                yield{path: forwardPath, message: cycle ? "Forward search found a cycle" : "Forward search completed"};
+                yield{path: forwardPath, message: "Forward search walked through nodes " + forwardPath.join(" -> ") + " and " + (cycle ? " found a cycle" : " completed with no cycle")};
             }else if(res === Result.OVER){
                 z.level = u.level+1;
                 z.incomingEdges = [];
-                B = {u};
+                B = new Set([u]);
                 const forwardPath = [];
                 cycle = this.forwardSearch(u, z, B, forwardPath);
-                yield{path: forwardPath, message: cycle ? "Forward search found a cycle" : "Forward search completed"};
+                yield{path: forwardPath, message: "Forward search walked through nodes " + forwardPath.join(" -> ") + " and " + (cycle ? " found a cycle" : " completed with no cycle")};
             }else if(res === Result.CYCLE){
                 cycle = true;
             }
 
             if(cycle){
-                const mergedKeys = this.fixComponents(u,z);
-                const mergedPath = [z.key, ...mergedKeys];
+                const mergedKeys = this.fixComponents(u, z);
+                // add z to the mergedKeys
+                mergedKeys.push(z.key);
+                let mergedPath = [mergedKeys];
                 yield{path: mergedKeys, message: `Merged components: ${mergedPath.join(", ")}`, highlightEdges: false};
             }
         }
         const x  = this.vertices[this.canonical.find(u.key)];
-        x.outgoingEdges.set(`${u.key}->${z.key}`, {v, w});
+        x.outgoingEdges.set(`${v.key}->${w.key}`, {from: v, to: w});
         if(x.level === z.level){
             z.incomingEdges.push(v);
         }
